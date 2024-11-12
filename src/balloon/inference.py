@@ -12,12 +12,13 @@ from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
 from detectron2.utils.visualizer import Visualizer, ColorMode
 from detectron2.data import MetadataCatalog
-from src.train import get_balloon_dicts  # 导入数据加载函数
+from src.balloon.train import get_balloon_dicts  # 导入数据加载函数
 
 
 def main():
+    model_dir = "./output/balloon/models"  # 模型保存目录
     # 确保输出目录存在
-    output_dir = "./output"
+    output_dir = "./output/balloon/inference"
     os.makedirs(output_dir, exist_ok=True)
 
     # 配置推理参数
@@ -26,7 +27,7 @@ def main():
         "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
     ))
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
-    cfg.MODEL.WEIGHTS = os.path.join(output_dir, "model_final.pth")  # 使用训练好的模型
+    cfg.MODEL.WEIGHTS = os.path.join(model_dir, "model_final.pth")  # 使用训练好的模型
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.7
     predictor = DefaultPredictor(cfg)
 
