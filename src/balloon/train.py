@@ -220,85 +220,97 @@ def evaluate_model(cfg, dataset_name):
     return metrics, predictor
 
 
+# 在main函数中修改输出目录的设置部分：
+
 def main():
-    # Create output directory with timestamp
+    # Create output directories with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = f"./output/balloon_{timestamp}"
-    os.makedirs(output_dir, exist_ok=True)
+    base_dir = f"./output/balloon_{timestamp}"
 
-    # Register datasets
-    for d in ["train", "val"]:
-        dataset_name = f"balloon_{d}"
-        if dataset_name in DatasetCatalog:
-            DatasetCatalog.remove(dataset_name)
-        DatasetCatalog.register(dataset_name,
-                                lambda d=d: get_balloon_dicts(f"data/balloon/{d}"))
-        MetadataCatalog.get(dataset_name).set(thing_classes=["balloon"])
+    # Create separate directories for detectron2 and custom outputs
+    detectron_output = os.path.join(base_dir, "detectron2_output")
+    custom_output = os.path.join(base_dir, "analysis_output")
 
-    # Configure training parameters
-    cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file(
-        "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
+    os.makedirs(detectron_output, exist_ok=True)
+    os.makedirs(custom_output, exist_ok=True)
 
-    # Dataset config
-    cfg.DATASETS.TRAIN = ("balloon_train",)
-    cfg.DATASETS.TEST = ("balloon_val",)
-    cfg.DATALOADER.NUM_WORKERS = 2
+    # ... (其他代码保持不变) ...
 
-    # Model config
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
-        "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
+    # 配置detectron2输出目录
+    cfg.OUTPUT_DIR = detectron_output
 
-    # Optimization parameters
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512
-    cfg.SOLVER.IMS_PER_BATCH = 2
-    cfg.SOLVER.BASE_LR = 0.02
-    cfg.SOLVER.MAX_ITER = 1000
-    cfg.SOLVER.STEPS = (500, 800)
-    cfg.SOLVER.GAMMA = 0.1
-    cfg.SOLVER.CHECKPOINT_PERIOD = 200
-
-    cfg.MODEL.RPN.BATCH_SIZE_PER_IMAGE = 256
-    cfg.MODEL.RPN.POSITIVE_FRACTION = 0.5
-    cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION = 0.25
-    cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
-
-    cfg.OUTPUT_DIR = output_dir
-
-    # Save hyperparameters
-    save_hyperparameters(cfg, output_dir)
+    # 保存自定义输出到analysis_output目录
+    save_hyperparameters(cfg, custom_output)
 
     # Training
     trainer = CustomTrainer(cfg)
     trainer.resume_or_load(resume=False)
     trainer.train()
 
-    # Save training curves
-    save_training_curves(trainer.loss_tracker, output_dir)
+    # Save training curves to custom output
+    save_training_curves(trainer.loss_tracker, custom_output)
 
     # Evaluation and visualization
     print("Evaluating model and generating visualizations...")
-    metrics, predictor = evaluate_model(cfg, "balloon_val")
+    metrics, predictor = evaluate_model(cfg, "balloon_val", custom_output)
 
     # Analyze and save predictions
     dataset_dicts = DatasetCatalog.get("balloon_val")
-    viz_dir = analyze_and_save_predictions(predictor, dataset_dicts, "balloon_val", output_dir)
+    viz_dir = analyze_and_save_predictions(predictor, dataset_dicts, "balloon_val", custom_output)
 
     print("\nTraining and evaluation completed. Results saved to:")
-    print(f"\n{output_dir}/")
-    print("├── parameters/")
-    print("│   └── hyperparameters.json")
-    print("├── training_curves/")
-    print("│   ├── loss_curve.png")
-    print("│   └── loss_data.json")
-    print("├── metrics/")
-    print("│   ├── metrics.json")
-    print("│   └── summary.json")
-    print("└── visualizations/")
-    print("    ├── good_cases/")
-    print("    └── bad_cases/")
+    print(f"\n{base_dir}/")
+    print("├── detectron2_output/")
+    print("│   ├── model checkpoints")
+    print("│   ├── tensorboard logs")
+    print("│   └── default inference results")
+    print("└── analysis_output/")
+    print("    ├── parameters/")
+    print("    ├── training_curves/")
+    print("    ├── metrics/")
+    print("    └── visualizations/")
 
+
+# 修改evaluate_model函数的参数：
+def evaluate_model(cfg, dataset_name, custom_output_dir):
+    """Evaluate model and save detailed metrics."""
+    predictor = DefaultPredictor(cfg)
+    evaluator = COCOEvaluator(dataset_name, output_dir=os.path.join(cfg.OUTPUT_DIR, "inference"))
+    val_loader = build_detection_test_loader(cfg, dataset_name)
+    metrics = inference_on_dataset(predictor.model, val_loader, evaluator)
+
+    # Save detailed metrics to custom output directory
+    metrics_dir = os.path.join(custom_output_dir, "metrics")
+    os.makedirs(metrics_dir, exist_ok=True)
+
+    metrics_file = os.path.join(metrics_dir, "metrics.json")
+    with open(metrics_file, "w") as f:
+        json.dump(metrics, f, indent=4)
+
+    # Save evaluation summary
+    summary = {
+        "segmentation": {
+            "mAP": metrics["segm"]["AP"],
+            "AP50": metrics["segm"]["AP50"],
+            "AP75": metrics["segm"]["AP75"],
+            "APs": metrics["segm"]["APs"],
+            "APm": metrics["segm"]["APm"],
+            "APl": metrics["segm"]["APl"],
+        },
+        "detection": {
+            "mAP": metrics["bbox"]["AP"],
+            "AP50": metrics["bbox"]["AP50"],
+            "AP75": metrics["bbox"]["AP75"],
+            "APs": metrics["bbox"]["APs"],
+            "APm": metrics["bbox"]["APm"],
+            "APl": metrics["bbox"]["APl"],
+        }
+    }
+
+    with open(os.path.join(metrics_dir, "summary.json"), "w") as f:
+        json.dump(summary, f, indent=4)
+
+    return metrics, predictor
 
 if __name__ == "__main__":
     main()
