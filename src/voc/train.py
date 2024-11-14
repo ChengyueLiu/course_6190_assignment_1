@@ -1,8 +1,5 @@
-# src/train.py
-
 import detectron2
 from detectron2.utils.logger import setup_logger
-
 setup_logger()
 import os
 import cv2
@@ -12,6 +9,19 @@ from detectron2.engine import DefaultTrainer
 from detectron2.config import get_cfg
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
+from detectron2.evaluation import COCOEvaluator
+from detectron2.utils.events import CommonMetricPrinter, JSONWriter, TensorboardXWriter
+
+class CustomTrainer(DefaultTrainer):
+    @classmethod
+    def build_evaluator(cls, cfg, dataset_name):
+        output_folder = os.path.join(cfg.OUTPUT_DIR, "inference")
+        return COCOEvaluator(dataset_name, cfg, True, output_folder)
+
+    def build_hooks(self):
+        hooks = super().build_hooks()
+        hooks.insert(-1, TensorboardXWriter(self.cfg.OUTPUT_DIR))
+        return hooks
 
 
 def get_voc_dicts(subset_dir, split):
