@@ -3,8 +3,8 @@ from detectron2.data import DatasetCatalog
 
 def balloon():
     from src.balloon import train, inference
-    # train.main()
-    inference.main()
+    train.main()
+    # inference.main()
 
 
 def voc():
@@ -39,6 +39,6 @@ def cityscapes():
 
 
 if __name__ == '__main__':
-    # balloon()
+    balloon()
     # voc()
-    cityscapes()
+    # cityscapes()
