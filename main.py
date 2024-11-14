@@ -39,6 +39,6 @@ def cityscapes():
 
 
 if __name__ == '__main__':
-    # balloon()
+    balloon()
     # voc()
-    cityscapes()
+    # cityscapes()
