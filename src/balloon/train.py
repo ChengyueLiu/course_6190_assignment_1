@@ -86,12 +86,12 @@ class CustomTrainer(DefaultTrainer):
         return COCOEvaluator(dataset_name, output_dir=output_folder)
 
 
-def analyze_and_save_predictions(predictor, dataset_dicts, dataset_name, output_dir):
+def analyze_and_save_predictions(predictor, dataset_dicts, dataset_name, base_dir):
     """Analyze predictions and save good/bad cases."""
     metadata = MetadataCatalog.get(dataset_name)
 
-    # Create directories for visualization
-    viz_dir = os.path.join(output_dir, "visualizations")
+    # Create directories for visualization in analysis_output
+    viz_dir = os.path.join(base_dir, "analysis_output", "visualizations")
     good_cases_dir = os.path.join(viz_dir, "good_cases")
     bad_cases_dir = os.path.join(viz_dir, "bad_cases")
     os.makedirs(good_cases_dir, exist_ok=True)
@@ -138,17 +138,18 @@ def analyze_and_save_predictions(predictor, dataset_dicts, dataset_name, output_
     return viz_dir
 
 
-def save_training_curves(loss_tracker, output_dir):
+def save_training_curves(loss_tracker, base_dir):
     """Save training loss curve."""
+    # Save to analysis_output directory
+    curves_dir = os.path.join(base_dir, "analysis_output", "training_curves")
+    os.makedirs(curves_dir, exist_ok=True)
+
     plt.figure(figsize=(10, 6))
     plt.plot(loss_tracker.losses)
     plt.title('Training Loss Over Time')
     plt.xlabel('Iteration')
     plt.ylabel('Total Loss')
     plt.grid(True)
-
-    curves_dir = os.path.join(output_dir, "training_curves")
-    os.makedirs(curves_dir, exist_ok=True)
     plt.savefig(os.path.join(curves_dir, "loss_curve.png"))
     plt.close()
 
@@ -157,8 +158,12 @@ def save_training_curves(loss_tracker, output_dir):
         json.dump(loss_tracker.losses, f)
 
 
-def save_hyperparameters(cfg, output_dir):
+def save_hyperparameters(cfg, base_dir):
     """Save hyperparameter settings in a readable format."""
+    # Save to analysis_output directory
+    params_dir = os.path.join(base_dir, "analysis_output", "parameters")
+    os.makedirs(params_dir, exist_ok=True)
+
     hyper_params = {
         "learning_rate": cfg.SOLVER.BASE_LR,
         "max_iterations": cfg.SOLVER.MAX_ITER,
@@ -172,22 +177,21 @@ def save_hyperparameters(cfg, output_dir):
         "nms_threshold": cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST,
     }
 
-    params_dir = os.path.join(output_dir, "parameters")
-    os.makedirs(params_dir, exist_ok=True)
-
     with open(os.path.join(params_dir, "hyperparameters.json"), "w") as f:
         json.dump(hyper_params, f, indent=4)
 
 
-def evaluate_model(cfg, dataset_name):
+def evaluate_model(cfg, dataset_name, base_dir):
     """Evaluate model and save detailed metrics."""
     predictor = DefaultPredictor(cfg)
-    evaluator = COCOEvaluator(dataset_name, output_dir=os.path.join(cfg.OUTPUT_DIR, "metrics"))
+
+    # Save detectron2's evaluation results in detectron2_output
+    evaluator = COCOEvaluator(dataset_name, output_dir=os.path.join(cfg.OUTPUT_DIR, "inference"))
     val_loader = build_detection_test_loader(cfg, dataset_name)
     metrics = inference_on_dataset(predictor.model, val_loader, evaluator)
 
-    # Save detailed metrics
-    metrics_dir = os.path.join(cfg.OUTPUT_DIR, "metrics")
+    # Save our custom metrics in analysis_output
+    metrics_dir = os.path.join(base_dir, "analysis_output", "metrics")
     os.makedirs(metrics_dir, exist_ok=True)
 
     metrics_file = os.path.join(metrics_dir, "metrics.json")
@@ -223,8 +227,14 @@ def evaluate_model(cfg, dataset_name):
 def main():
     # Create output directory with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = f"./output/balloon_{timestamp}"
-    os.makedirs(output_dir, exist_ok=True)
+    base_output_dir = f"./output/balloon_{timestamp}"
+
+    # Create separate directories for detectron2 and analysis outputs
+    detectron2_output = os.path.join(base_output_dir, "detectron2_output")
+    analysis_output = os.path.join(base_output_dir, "analysis_output")
+
+    os.makedirs(detectron2_output, exist_ok=True)
+    os.makedirs(analysis_output, exist_ok=True)
 
     # Register datasets
     for d in ["train", "val"]:
@@ -264,10 +274,11 @@ def main():
     cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION = 0.25
     cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.5
 
-    cfg.OUTPUT_DIR = output_dir
+    # Set detectron2's output directory
+    cfg.OUTPUT_DIR = detectron2_output
 
     # Save hyperparameters
-    save_hyperparameters(cfg, output_dir)
+    save_hyperparameters(cfg, base_output_dir)
 
     # Training
     trainer = CustomTrainer(cfg)
@@ -275,29 +286,34 @@ def main():
     trainer.train()
 
     # Save training curves
-    save_training_curves(trainer.loss_tracker, output_dir)
+    save_training_curves(trainer.loss_tracker, base_output_dir)
 
     # Evaluation and visualization
     print("Evaluating model and generating visualizations...")
-    metrics, predictor = evaluate_model(cfg, "balloon_val")
+    metrics, predictor = evaluate_model(cfg, "balloon_val", base_output_dir)
 
     # Analyze and save predictions
     dataset_dicts = DatasetCatalog.get("balloon_val")
-    viz_dir = analyze_and_save_predictions(predictor, dataset_dicts, "balloon_val", output_dir)
+    viz_dir = analyze_and_save_predictions(predictor, dataset_dicts, "balloon_val", base_output_dir)
 
     print("\nTraining and evaluation completed. Results saved to:")
-    print(f"\n{output_dir}/")
-    print("├── parameters/")
-    print("│   └── hyperparameters.json")
-    print("├── training_curves/")
-    print("│   ├── loss_curve.png")
-    print("│   └── loss_data.json")
-    print("├── metrics/")
-    print("│   ├── metrics.json")
-    print("│   └── summary.json")
-    print("└── visualizations/")
-    print("    ├── good_cases/")
-    print("    └── bad_cases/")
+    print(f"\n{base_output_dir}/")
+    print("├── detectron2_output/")
+    print("│   ├── inference/")
+    print("│   ├── model_*.pth")
+    print("│   └── events.out.tfevents.*")
+    print("└── analysis_output/")
+    print("    ├── parameters/")
+    print("    │   └── hyperparameters.json")
+    print("    ├── training_curves/")
+    print("    │   ├── loss_curve.png")
+    print("    │   └── loss_data.json")
+    print("    ├── metrics/")
+    print("    │   ├── metrics.json")
+    print("    │   └── summary.json")
+    print("    └── visualizations/")
+    print("        ├── good_cases/")
+    print("        └── bad_cases/")
 
 
 if __name__ == "__main__":
