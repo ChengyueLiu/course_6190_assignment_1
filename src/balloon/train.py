@@ -73,7 +73,7 @@ def get_balloon_dicts(img_dir):
 
 def main():
     # 创建输出目录
-    output_dir = "./output/voc"
+    output_dir = "./output/balloon"
     model_dir = os.path.join(output_dir, "models")
     log_dir = os.path.join(output_dir, "logs")
     eval_dir = os.path.join(output_dir, "eval")
@@ -83,23 +83,20 @@ def main():
     os.makedirs(eval_dir, exist_ok=True)
 
     # 注册数据集
-    # 注册数据集
     for d in ["train", "val"]:
         dataset_name = f"balloon_{d}"
-        data_path = os.path.join("data", "balloon", d)
         if dataset_name in DatasetCatalog:
             DatasetCatalog.remove(dataset_name)
         DatasetCatalog.register(dataset_name, lambda d=d: get_balloon_dicts(f"data/balloon/{d}"))
         MetadataCatalog.get(dataset_name).set(thing_classes=["balloon"])
-
 
     # 配置训练参数
     cfg = get_cfg()
     cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
 
     # 数据集设置
-    cfg.DATASETS.TRAIN = ("voc_subset_train",)
-    cfg.DATASETS.TEST = ("voc_subset_val",)
+    cfg.DATASETS.TRAIN = ("balloon_train",)
+    cfg.DATASETS.TEST = ("balloon_val",)  # 启用验证集评估
 
     # 数据加载设置
     cfg.DATALOADER.NUM_WORKERS = 2
@@ -107,21 +104,21 @@ def main():
     # 模型初始化
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
 
-    # 按照原论文设置超参数
-    cfg.SOLVER.IMS_PER_BATCH = 2
-    cfg.SOLVER.BASE_LR = 0.02
-    cfg.SOLVER.MAX_ITER = 120000
-    cfg.SOLVER.STEPS = (90000,)
-    cfg.SOLVER.GAMMA = 0.1
-    cfg.SOLVER.MOMENTUM = 0.9
-    cfg.SOLVER.WEIGHT_DECAY = 0.0001
+    # 训练超参数设置(按照论文)
+    cfg.SOLVER.IMS_PER_BATCH = 2  # 每个GPU 2张图
+    cfg.SOLVER.BASE_LR = 0.02  # 初始学习率
+    cfg.SOLVER.MAX_ITER = 120000  # 总迭代次数
+    cfg.SOLVER.STEPS = (90000,)  # 学习率衰减点
+    cfg.SOLVER.GAMMA = 0.1  # 学习率衰减系数
+    cfg.SOLVER.MOMENTUM = 0.9  # 动量
+    cfg.SOLVER.WEIGHT_DECAY = 0.0001  # 权重衰减
 
     # ROI头部设置
-    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(selected_classes)
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512  # ROIs per image
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1
 
     # 评估设置
-    cfg.TEST.EVAL_PERIOD = 5000
+    cfg.TEST.EVAL_PERIOD = 5000  # 每5000次迭代评估一次
 
     # 输出设置
     cfg.OUTPUT_DIR = output_dir
