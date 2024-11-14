@@ -83,8 +83,15 @@ def main():
     os.makedirs(eval_dir, exist_ok=True)
 
     # 注册数据集
-    subset_dir = "./data/VOC2012_subset"
-    selected_classes = register_voc_dataset(subset_dir)
+    # 注册数据集
+    for d in ["train", "val"]:
+        dataset_name = f"balloon_{d}"
+        data_path = os.path.join("data", "balloon", d)
+        if dataset_name in DatasetCatalog:
+            DatasetCatalog.remove(dataset_name)
+        DatasetCatalog.register(dataset_name, lambda d=d: get_balloon_dicts(f"data/balloon/{d}"))
+        MetadataCatalog.get(dataset_name).set(thing_classes=["balloon"])
+
 
     # 配置训练参数
     cfg = get_cfg()
